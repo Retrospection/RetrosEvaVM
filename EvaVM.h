@@ -27,10 +27,19 @@ using syntax::EvaParser;
 #define READ_BYTE() *ip++
 
 /**
+ * Reads a short word (2 bytes).
+ */
+#define READ_SHORT() (ip += 2, (uint16_t)((*(ip - 2) << 8) | *(ip - 1)))
+
+/**
+ * Converts bytecode index to a pointer.
+ */
+#define TO_ADDRESS(index) (&co->code[index])
+
+/**
  * Gets a constant from the pool
  */
 #define GET_CONST() co->constants[READ_BYTE()]
-
 
 /**
  * Stack top (stack overflow after exceeding).
@@ -45,7 +54,31 @@ do {                                \
     push(NUMBER((op1 op op2)));     \
 } while (false)
 
-
+#define COMPARE_VALUES(op, v1, v2)  \
+do {                                \
+    bool res;                       \
+    switch (op) {                   \
+    case 0:                         \
+        res = v1 < v2;              \
+        break;                      \
+    case 1:                         \
+        res = v1 > v2;              \
+        break;                      \
+    case 2:                         \
+        res = v1 == v2;             \
+        break;                      \
+    case 3:                         \
+        res = v1 >= v2;             \
+        break;                      \
+    case 4:                         \
+        res = v1 <= v2;             \
+        break;                      \
+    case 5:                         \
+        res = v1 != v2;             \
+        break;                      \
+    }                               \
+    push(BOOLEAN(res));             \
+} while (false)
 
 
 /**
@@ -58,7 +91,7 @@ public:
     /*
      * Executes a program.
      */
-    EvaValue exec(const std::string& program) {
+    EvaValue exec(const std::string &program) {
         // 1. parse the program
         auto ast = parser->parse(program);
 
@@ -80,7 +113,7 @@ public:
      * Main eval loop
      */
     EvaValue eval() {
-        for(;;) {
+        for (;;) {
             auto opcode = READ_BYTE();
             switch (opcode) {
                 case OP_HALT: {
@@ -118,8 +151,45 @@ public:
                     BINARY_OP(/);
                     break;
                 }
+
+                // ------------------------------------
+                // Comparison
+
+                case OP_COMPARE: {
+                    auto op = READ_BYTE();
+
+                    auto op2 = pop();
+                    auto op1 = pop();
+
+                    if (IS_NUMBER(op1) && IS_NUMBER(op2)) {
+                        auto v1 = AS_NUMBER(op1);
+                        auto v2 = AS_NUMBER(op2);
+                        COMPARE_VALUES(op, v1, v2);
+                    } else if (IS_STRING(op1) && IS_STRING(op2)) {
+                        auto v1 = AS_CPPSTRING(op1);
+                        auto v2 = AS_CPPSTRING(op2);
+                        COMPARE_VALUES(op, v1, v2);
+                    }
+                    break;
+                }
+
+                case OP_JMP_IF_FALSE: {
+                    auto cond = AS_BOOLEAN(pop());
+                    auto address = READ_SHORT();
+                    if (!cond) {
+                        ip = TO_ADDRESS(address);
+                    }
+                    break;
+                }
+
+                case OP_JMP: {
+                    auto address = READ_SHORT();
+                    ip = TO_ADDRESS(address);
+                    break;
+                }
                 default:
-                    DIE << "Unknown opcode: " << std::hex << static_cast<int>(opcode);
+                    break;
+                    // DIE << "Unknown opcode: " << std::hex << static_cast<int>(opcode);
             }
         }
     }
@@ -174,7 +244,7 @@ public:
     /**
      * Code Object;
      */
-    CodeObject* co;
+    CodeObject *co;
 };
 
 #endif //RETROSEVAVM_EVAVM_H

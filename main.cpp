@@ -5,7 +5,7 @@ int main() {
     EvaVM vm;
 
     auto result = vm.exec(R"(
-        "hello,world!"
+        (if (> 5 10) 1 2)
     )");
 
     log(result);

@@ -21,4 +21,16 @@
 #define OP_MUL 0x04
 #define OP_DIV 0x05
 
+#define OP_COMPARE 0x06
+
+/**
+ * Control flow: jump if the value on the stack is false.
+ */
+#define OP_JMP_IF_FALSE 0x07
+
+/**
+ * Unconditional jump
+ */
+#define OP_JMP 0x08
+
 #endif //RETROSEVAVM_OPCODE_H
