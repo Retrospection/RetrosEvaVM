@@ -5,11 +5,12 @@
 #ifndef RETROSEVAVM_EVACOMPILER_H
 #define RETROSEVAVM_EVACOMPILER_H
 
-
+#include "Global.h"
 #include "EvaValue.h"
 #include "OpCode.h"
 #include "parser/EvaParser.h"
 #include "disassembler/EvaDisassembler.h"
+
 
 #include <map>
 #include <string>
@@ -46,7 +47,8 @@
 
 class EvaCompiler {
 public:
-    EvaCompiler(): disassembler(std::make_unique<EvaDisassembler>()) {}
+    EvaCompiler(std::shared_ptr<Global> global)
+        : global(global), disassembler(std::make_unique<EvaDisassembler>(global)) {}
 
     /**
      * Main compile API.
@@ -95,9 +97,31 @@ public:
                 /*
                  * Boolean
                  */
-                if (exp.string == "true" || exp.string == "false") {
+                if ( exp.string == "true" || exp.string == "false" ) {
                     emit(OP_CONST);
                     emit(booleanConstIdx(exp.string == "true") ? true : false);
+                } else {
+                    // Variables:
+                    auto varName = exp.string;
+
+                    // 1. Local Vars:
+
+                    auto localIndex = co->getLocalIndex(varName);
+
+                    if (localIndex != -1) {
+                        emit(OP_GET_LOCAL);
+                        emit(localIndex);
+                    }
+
+                    // 2. Global Variables:
+                    else {
+                        if (!global->exists(exp.string)) {
+                            DIE << "[EvaCompiler]: Reference error: " << exp.string;
+                        }
+
+                        emit(OP_GET_GLOBAL);
+                        emit(global->getGlobalIndex(exp.string));
+                    }
                 }
                 break;
             }
@@ -182,6 +206,74 @@ public:
                         auto endBranchAddr = getOffset();
                         patchJumpAddress(endAddr, endBranchAddr);
                     }
+
+                    // --------------------------------------
+                    // Variable declaration: (var x (+ y 10))
+                    else if (op == "var") {
+
+                        auto varName = exp.list[1].string;
+
+                        // Initializer
+                        gen(exp.list[2]);
+
+
+                        // 1. Global vars:
+                        if (isGlobalScope()) {
+                            global->define(exp.list[1].string);
+                            emit(OP_SET_GLOBAL);
+                            emit(global->getGlobalIndex(exp.list[1].string));
+                        }
+
+                        // 2. Local vars:
+                        else {
+                            co->addLocal(varName);
+                            emit(OP_SET_LOCAL);
+                            emit(co->getLocalIndex(varName));
+                        }
+                    }
+
+                    else if (op == "set") {
+                        auto varName = exp.list[1].string;
+
+                        // value.
+                        gen(exp.list[2]);
+
+                        auto localIndex = co->getLocalIndex(varName);
+
+                        if (localIndex != -1) {
+                            emit(OP_SET_LOCAL);
+                            emit(localIndex);
+                        }
+
+                        else {
+                            auto globalIndex = global->getGlobalIndex(varName);
+                            if (globalIndex == -1) {
+                                DIE << "Reference error: " << varName << " is not defined.";
+                            }
+                            emit(OP_SET_GLOBAL);
+                            emit(globalIndex);
+                        }
+                    }
+
+                    else if (op == "begin") {
+                        scopeEnter();
+                        for (auto i = 1; i < exp.list.size(); i++) {
+                            // The value of the last expression is kept
+                            // on the stack as the final result.
+                            bool isLast = i == exp.list.size() - 1;
+
+                            // Local variable or function (should not pop):
+                            auto isLocalDeclaration =
+                                    isDeclaration(exp.list[i]) && !isGlobalScope();
+
+                            gen(exp.list[i]);
+
+                            if ( !isLast && !isLocalDeclaration ) {
+                                emit(OP_POP);
+                            }
+                        }
+                        scopeExit();
+                    }
                 }
                 break;
             }
@@ -195,9 +287,75 @@ public:
 
 private:
     /**
+     * Global object.
+     */
+    std::shared_ptr<Global> global;
+
+    /**
      * Disassembler
      */
     std::unique_ptr<EvaDisassembler> disassembler;
+
+    /**
+     * Enter a new scope.
+     */
+    void scopeEnter() { co->scopeLevel++; }
+
+    /**
+     * Exit current scope.
+     */
+    void scopeExit() {
+        // Pop vars from the stack if they were declared
+        // within this specific scope.
+        auto varsCount = getVarsCountOnScopeExit();
+
+        if (varsCount > 0) {
+            emit(OP_SCOPE_EXIT);
+            emit(varsCount);
+        }
+
+
+        co->scopeLevel--;
+    }
+
+    /**
+     * Whether it's the global scope.
+     */
+    bool isGlobalScope() { return co->name == "main" && co->scopeLevel == 1; }
+
+    /**
+     * Whether the expression is a declaration.
+     */
+    bool isDeclaration(const Exp& exp) { return isVarDeclaration(exp); }
+
+    /**
+     * (var <name> <value>)
+     */
+    bool isVarDeclaration(const Exp& exp) { return isTaggedList(exp, "var"); }
+
+    /**
+     * Tagged lists.
+     */
+    bool isTaggedList(const Exp& exp, const std::string& tag) {
+        return exp.type == ExpType::LIST && exp.list[0].type == ExpType::SYMBOL && exp.list[0].string == tag;
+    }
+
+    /**
+     * Number of local vars in this scope.
+     */
+    size_t getVarsCountOnScopeExit() {
+        auto varsCount = 0;
+
+        if ( co->locals.size() > 0 ) {
+            while (co->locals.back().scopeLevel == co->scopeLevel) {
+                co->locals.pop_back();
+                varsCount++;
+            }
+        }
+
+        return varsCount;
+    }
+
 
     /**
      * Returns current bytecode offset.
@@ -252,6 +410,9 @@ private:
      * Compiling code object.
      */
     CodeObject* co;
+
+
+
 
     /**
      * Compare ops map.

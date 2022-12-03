@@ -13,6 +13,7 @@
 
 #include "OpCode.h"
 #include "Logger.h"
+#include "Global.h"
 #include "EvaValue.h"
 #include "EvaCompiler.h"
 #include "parser/EvaParser.h"
@@ -86,14 +87,19 @@ do {                                \
  */
 class EvaVM {
 public:
-    EvaVM() : parser(std::make_unique<EvaParser>()), compiler(std::make_unique<EvaCompiler>()) {}
+    EvaVM() :
+        parser(std::make_unique<EvaParser>()),
+        global(std::make_shared<Global>()),
+        compiler(std::make_unique<EvaCompiler>(global)) {
+        setGlobalVariables();
+    }
 
     /*
      * Executes a program.
      */
     EvaValue exec(const std::string &program) {
         // 1. parse the program
-        auto ast = parser->parse(program);
+        auto ast = parser->parse("(begin " + program + ")");
 
         // 2. Compile program to Eva bytecode
         co = compiler->compile(ast);
@@ -105,6 +111,7 @@ public:
         ip = &co->code[0];
 
         sp = &stack[0];
+        bp = &stack[0];
 
         compiler-> disassembleBytecode();
 
@@ -189,9 +196,60 @@ public:
                     ip = TO_ADDRESS(address);
                     break;
                 }
-                default:
+
+                // -------------------------
+                // Global Variable value:
+                case OP_GET_GLOBAL: {
+                    auto globalIndex = READ_BYTE();
+                    push(global->get(globalIndex).value);
                     break;
-                    // DIE << "Unknown opcode: " << std::hex << static_cast<int>(opcode);
+                }
+
+                case OP_SET_GLOBAL: {
+                    auto globalIndex = READ_BYTE();
+                    auto value = peek(0);
+                    global->set(globalIndex, value);
+                    push(global->get(globalIndex).value);
+                    break;
+                }
+
+                case OP_POP: {
+                    pop();
+                    break;
+                }
+
+                case OP_GET_LOCAL: {
+                    auto localIndex = READ_BYTE();
+                    if (localIndex < 0 || localIndex >= stack.size()) {
+                        DIE << "OP_GET_LOCAL: invalid variable index: " << (int)localIndex;
+                    }
+                    push(bp[localIndex]);
+                    break;
+                }
+
+                case OP_SET_LOCAL: {
+                    auto localIndex = READ_BYTE();
+                    auto value = peek(0);
+                    if (localIndex < 0 || localIndex >= stack.size()) {
+                        DIE << "OP_SET_LOCAL: invalid variable index: " << (int)localIndex;
+                    }
+                    bp[localIndex] = value;
+                    break;
+                }
+
+                case OP_SCOPE_EXIT: {
+                    auto count = READ_BYTE();
+
+                    // move the result above the vars:
+                    *(sp - 1 - count) = peek(0);
+
+                    popN(count);
+                    break;
+                }
+
+
+                default:
+                    DIE << "Unknown opcode: " << std::hex << static_cast<int>(opcode);
             }
         }
     }
@@ -218,6 +276,41 @@ public:
         return *sp;
     }
 
+
+    /**
+     * Peeks an element from the stack.
+     */
+    EvaValue peek(size_t offset = 0) {
+        if (stack.size() == 0) {
+            DIE << "peek(): empty stack.\n";
+        }
+        return *(sp - 1 - offset);
+    }
+
+    /**
+     * Pops multiple values from the stack.
+     */
+    void popN(size_t count) {
+        if (stack.size() == 0) {
+            DIE << "popN(): empty stack.\n";
+        }
+        sp -= count;
+    }
+
+
+    /**
+     * Sets up global variables and functions.
+     */
+    void setGlobalVariables() {
+        global->addConst("VERSION", 1);
+        global->addConst("y", 20);
+    }
+
+    /**
+     * Global objects.
+     */
+    std::shared_ptr<Global> global;
+
     /**
      * Compiler
      */
@@ -237,6 +330,11 @@ public:
      * Stack pointer.
      */
     EvaValue *sp;
+
+    /**
+     * Base pointer.
+     */
+    EvaValue *bp;
 
     /**
      * Operands stack.

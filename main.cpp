@@ -5,7 +5,17 @@ int main() {
     EvaVM vm;
 
     auto result = vm.exec(R"(
-        (if (> 5 10) 1 2)
+        (var x 5)
+        (set x (+ x 10))
+        x
+        (begin
+            (var z 100)
+            (set x 1000)
+            (begin
+                (var x 200)
+                x)
+            x)
+        x
     )");
 
     log(result);
