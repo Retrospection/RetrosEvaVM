@@ -37,7 +37,7 @@ private:
         std::ios_base::fmtflags f(std::cout.flags());
 
         // Print bytecode offset:
-        std::cout << std::uppercase << std::hex << std::setfill('0') << std::setw(4)
+        std::cout << std::uppercase << std::hex << std::setfill('0') << std::right << std::setw(4)
                   << offset << "    ";
 
         uint8_t opcode = co->code[offset];
@@ -119,7 +119,7 @@ private:
         printOpCode(opcode);
         uint16_t address = readWordAtOffset(co, offset + 1);
 
-        std::cout << std::uppercase << std::hex << std::setfill('0') << std::setw(4)
+        std::cout << std::uppercase << std::hex << std::setfill('0') << std::right << std::setw(4)
                   << (int)address << " ";
 
         std::cout.flags(f);

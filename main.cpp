@@ -5,17 +5,13 @@ int main() {
     EvaVM vm;
 
     auto result = vm.exec(R"(
-        (var x 5)
-        (set x (+ x 10))
-        x
-        (begin
-            (var z 100)
-            (set x 1000)
+        (var i 10)
+        (var count 0)
+        (while (> i 0)
             (begin
-                (var x 200)
-                x)
-            x)
-        x
+                (set i (- i 1))
+                (set count (+ count 1))))
+        count
     )");
 
     log(result);

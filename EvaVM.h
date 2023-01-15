@@ -251,6 +251,12 @@ public:
                 default:
                     DIE << "Unknown opcode: " << std::hex << static_cast<int>(opcode);
             }
+
+            for (int i = 0; i < STACK_LIMIT; i++)
+                if (std::abs(AS_NUMBER(stack[i]) - 0) > 1e-6)
+                    std::cout << AS_NUMBER(stack[i]) << " ";
+            std::cout << std::endl;
+            std::cout << sp - bp << std::endl;
         }
     }
 

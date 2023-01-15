@@ -208,6 +208,45 @@ public:
                     }
 
                     // --------------------------------------
+                    // While loop:
+
+                    /**
+                     * (while <test> <body>)
+                     */
+
+                    else if (op == "while") {
+                        auto loopStartAddr = getOffset();
+
+                        // Emit <test>
+                        gen(exp.list[1]);
+
+                        // Loop end. Init with 0 address, will be patched.
+                        emit(OP_JMP_IF_FALSE);
+
+                        // 2-byte addresses:
+                        emit(0);
+                        emit(0);
+
+                        auto loopEndJmpAddr = getOffset() - 2;
+
+                        // Emit <body>
+                        gen(exp.list[2]);
+
+                        // Goto loop start:
+                        emit(OP_JMP);
+
+                        emit(0);
+                        emit(0);
+
+                        patchJumpAddress(getOffset() - 2, loopStartAddr);
+
+                        // Patch the end.
+                        auto loopEndAddr = getOffset() + 1;
+                        patchJumpAddress(loopEndJmpAddr, loopEndAddr);
+                    }
+
+
+                    // --------------------------------------
                     // Variable declaration: (var x (+ y 10))
                     else if (op == "var") {
 
